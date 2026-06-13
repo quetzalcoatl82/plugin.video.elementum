@@ -1,0 +1,156 @@
+From 5da23e8e484884ea1d5e9808dfe118316f45b08c Mon Sep 17 00:00:00 2001
+From: Federico Lelli <federico.lelli@mondadori.it>
+Date: Sat, 13 Jun 2026 16:42:26 +0200
+Subject: [PATCH] fix: exclude dropped Trakt shows from My Progress
+
+Filter progress using both hidden sections progress_watched and dropped,
+cache the dropped list, and refresh it when shows.dropped_at changes.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ cache/types.go      |  2 ++
+ library/trakt.go    | 15 +++++++++------
+ trakt/activities.go |  4 ++++
+ trakt/shows.go      | 25 +++++++++++++++----------
+ trakt/types.go      |  1 +
+ 5 files changed, 31 insertions(+), 16 deletions(-)
+
+diff --git a/cache/types.go b/cache/types.go
+index c8f0adb..f471c46 100644
+--- a/cache/types.go
++++ b/cache/types.go
+@@ -108,6 +108,8 @@ const (
+ 	TraktShowsCalendarTotalExpire          = CacheExpireLong
+ 	TraktShowsHiddenProgressKey            = TraktKey + "shows.hidden.progress"
+ 	TraktShowsHiddenProgressExpire         = CacheExpireLong
++	TraktShowsHiddenDroppedKey             = TraktKey + "shows.hidden.dropped"
++	TraktShowsHiddenDroppedExpire          = CacheExpireLong
+ 	TraktSeasonsKey                        = TraktKey + "seasons.%d"
+ 	TraktSeasonsExpire                     = CacheExpireLong
+ 	TraktSeasonsExtendedKey                = TraktKey + "seasons.%d.extended"
+diff --git a/library/trakt.go b/library/trakt.go
+index 3826128..cacb146 100644
+--- a/library/trakt.go
++++ b/library/trakt.go
+@@ -146,8 +146,8 @@ func RefreshTrakt() error {
+ 			isErrored = true
+ 		}
+ 	}
+-	if isFirstRun || activities.ShowsHidden() {
+-		if err := RefreshTraktHidden(xbmcHost, ShowType, activities.ShowsHidden()); err != nil {
++	if isFirstRun || activities.ShowsHidden() || activities.ShowsDropped() {
++		if err := RefreshTraktHidden(xbmcHost, ShowType, isFirstRun || activities.ShowsHidden() || activities.ShowsDropped()); err != nil {
+ 			isErrored = true
+ 		}
+ 	}
+@@ -761,10 +761,13 @@ func RefreshTraktHidden(xbmcHost *xbmc.XBMCHost, itemType int, isRefreshNeeded b
+ 
+ 	// https://trakt.docs.apiary.io/#reference/users/hidden-items/get-hidden-items
+ 	if itemType == ShowType {
+-		// calendar and recommendations for shows are handled on trakt side, progress_watched should be handled manually
+-		if _, err := trakt.ListHiddenShows("progress_watched", isRefreshNeeded); err != nil {
+-			log.Warningf("TraktSync: Got error from SyncShowsList for Watched Progress: %s", err)
+-			return err
++		// calendar and recommendations for shows are handled on trakt side,
++		// progress_watched and dropped should be handled manually
++		for _, section := range []string{"progress_watched", "dropped"} {
++			if _, err := trakt.ListHiddenShows(section, isRefreshNeeded); err != nil {
++				log.Warningf("TraktSync: Got error from ListHiddenShows for section %s: %s", section, err)
++				return err
++			}
+ 		}
+ 	} else if itemType == MovieType {
+ 		// calendar and recommendations for movies are handled on trakt side, and they are the only options
+diff --git a/trakt/activities.go b/trakt/activities.go
+index 92052ca..15f2fdb 100644
+--- a/trakt/activities.go
++++ b/trakt/activities.go
+@@ -155,6 +155,10 @@ func (a *Activities) ShowsHidden() bool {
+ 	return !a.HasPrevious() || a.Current.Shows.HiddenAt.After(a.Previous.Shows.HiddenAt)
+ }
+ 
++func (a *Activities) ShowsDropped() bool {
++	return !a.HasPrevious() || a.Current.Shows.DroppedAt.After(a.Previous.Shows.DroppedAt)
++}
++
+ // Seasons struct {
+ // 	RatedAt       time.Time `json:"rated_at"`
+ // 	WatchlistedAt time.Time `json:"watchlisted_at"`
+diff --git a/trakt/shows.go b/trakt/shows.go
+index a6ba340..83d49c6 100644
+--- a/trakt/shows.go
++++ b/trakt/shows.go
+@@ -682,7 +682,7 @@ func WatchedShowsProgress() (shows []*ProgressShow, err error) {
+ 	}
+ 	wg.Wait()
+ 
+-	hiddenShowsMap := GetHiddenShowsMap("progress_watched")
++	hiddenShowsMap := GetProgressHiddenShowsMap()
+ 	for _, s := range showsList {
+ 		if s != nil {
+ 			if !hiddenShowsMap[s.Show.IDs.Trakt] {
+@@ -696,20 +696,22 @@ func WatchedShowsProgress() (shows []*ProgressShow, err error) {
+ 	return
+ }
+ 
+-// GetHiddenShowsMap returns a map with hidden shows that can be used for filtering
+-func GetHiddenShowsMap(section string) map[int]bool {
++// GetProgressHiddenShowsMap returns hidden and dropped shows for progress filtering.
++func GetProgressHiddenShowsMap() map[int]bool {
+ 	hiddenShowsMap := make(map[int]bool)
+ 	if config.Get().TraktToken == "" || !config.Get().TraktSyncHidden {
+ 		return hiddenShowsMap
+ 	}
+ 
+-	hiddenShowsProgress, _ := ListHiddenShows(section, false)
+-	for _, show := range hiddenShowsProgress {
+-		if show == nil || show.Show == nil || show.Show.IDs == nil {
+-			continue
+-		}
++	for _, section := range []string{"progress_watched", "dropped"} {
++		hiddenShows, _ := ListHiddenShows(section, false)
++		for _, show := range hiddenShows {
++			if show == nil || show.Show == nil || show.Show.IDs == nil {
++				continue
++			}
+ 
+-		hiddenShowsMap[show.Show.IDs.Trakt] = true
++			hiddenShowsMap[show.Show.IDs.Trakt] = true
++		}
+ 	}
+ 
+ 	return hiddenShowsMap
+@@ -721,7 +723,7 @@ func FilterHiddenProgressShows(inShows []*ProgressShow) (outShows []*ProgressSho
+ 		return inShows
+ 	}
+ 
+-	hiddenShowsMap := GetHiddenShowsMap("progress_watched")
++	hiddenShowsMap := GetProgressHiddenShowsMap()
+ 
+ 	for _, s := range inShows {
+ 		if s == nil || s.Show == nil || s.Show.IDs == nil {
+@@ -758,6 +760,9 @@ func ListHiddenShows(section string, isUpdateNeeded bool) (shows []*Shows, err e
+ 	case "progress_watched":
+ 		cacheKey = cache.TraktShowsHiddenProgressKey
+ 		cacheExpiration = cache.TraktShowsHiddenProgressExpire
++	case "dropped":
++		cacheKey = cache.TraktShowsHiddenDroppedKey
++		cacheExpiration = cache.TraktShowsHiddenDroppedExpire
+ 	default:
+ 		return shows, fmt.Errorf("Unsupported section for hidden shows: %s", section)
+ 	}
+diff --git a/trakt/types.go b/trakt/types.go
+index 4c99224..0bf2cac 100644
+--- a/trakt/types.go
++++ b/trakt/types.go
+@@ -426,6 +426,7 @@ type UserActivities struct {
+ 		FavoritedAt   time.Time `json:"favorited_at"`
+ 		CommentedAt   time.Time `json:"commented_at"`
+ 		HiddenAt      time.Time `json:"hidden_at"`
++		DroppedAt     time.Time `json:"dropped_at"`
+ 	} `json:"shows"`
+ 	Seasons struct {
+ 		RatedAt       time.Time `json:"rated_at"`
+-- 
+2.54.0
+

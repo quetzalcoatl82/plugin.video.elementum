@@ -7,7 +7,28 @@ PLATFORM=""
 SUFFIX=""
 TARGET=""
 
-ZIPIGNORE=(-x "${ADDON}/web-src" -x "${ADDON}/.*" -x "${ADDON}/.git" -x "${ADDON}/resources/web-src/*" -x "${ADDON}/*.sh" -x "${ADDON}/*.zip" -x "${ADDON}/*.pyc")
+ZIPIGNORE=(
+    -x "${ADDON}/web-src/*"
+    -x "${ADDON}/.git/*"
+    -x "${ADDON}/.github/*"
+    -x "${ADDON}/.gitlab-ci.yml"
+    -x "${ADDON}/.gitattributes"
+    -x "${ADDON}/resources/web-src/*"
+    -x "${ADDON}/*.sh"
+    -x "${ADDON}/*.zip"
+    -x "${ADDON}/*.pyc"
+    -x "${ADDON}/__pycache__/*"
+    -x "${ADDON}/resources/site-packages/*/__pycache__/*"
+    -x "${ADDON}/dist/*"
+    -x "${ADDON}/patches/*"
+    -x "${ADDON}/scripts/*"
+    -x "${ADDON}/.venv/*"
+    -x "${ADDON}/CUSTOM.md"
+    -x "${ADDON}/BUILD.md"
+    -x "${ADDON}/Makefile"
+    -x "${ADDON}/.DS_Store"
+    -x "${ADDON}/*/.DS_Store"
+)
 
 PWD=$(pwd)
 VERSION=$(git describe --tags)
@@ -100,6 +121,9 @@ if [[ -f "${ZIPPATH}" ]]; then
     echo "## ${ZIPPATH} already exists, removing it"
     rm ${ZIPPATH}
 fi
+
+echo "## Cleaning up build artifacts"
+find ${PWD} -name '__pycache__' -type d -prune -exec rm -rf {} + 2>/dev/null || true
 
 echo "## Cleaning up existing ${PWD}/resources/bin/ folder"
 rm -rf ${PWD}/resources/bin/*
