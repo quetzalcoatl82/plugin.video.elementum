@@ -1,0 +1,11 @@
+Cartella per le patch esportate dal branch `custom`.
+
+Ogni file .patch corrisponde a un commit sul branch custom, in ordine numerico:
+  001-descrizione.patch
+  002-altra-modifica.patch
+
+Esportare dopo aver committato su custom:
+  ./scripts/export-patches.sh
+
+Riapplicare da zero (es. dopo conflitti di rebase):
+  ./scripts/reset-custom-from-patches.sh
