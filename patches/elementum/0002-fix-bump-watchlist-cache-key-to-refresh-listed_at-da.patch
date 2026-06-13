@@ -1,0 +1,35 @@
+From 0f945d878de58cae4a411bf25454114c4c1844d9 Mon Sep 17 00:00:00 2001
+From: Federico Lelli <federico.lelli@mondadori.it>
+Date: Sat, 13 Jun 2026 15:27:00 +0200
+Subject: [PATCH 2/2] fix: bump watchlist cache key to refresh listed_at data
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ cache/types.go | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/cache/types.go b/cache/types.go
+index 50ab13e..c8f0adb 100644
+--- a/cache/types.go
++++ b/cache/types.go
+@@ -70,7 +70,7 @@ const (
+ 	TraktMoviesByCategoryExpire            = 24 * time.Hour
+ 	TraktMoviesByCategoryTotalKey          = TraktKey + "movies.%s.total"
+ 	TraktMoviesByCategoryTotalExpire       = 24 * time.Hour
+-	TraktMoviesWatchlistKey                = TraktKey + "movies.watchlist"
++	TraktMoviesWatchlistKey                = TraktKey + "movies.watchlist.v2"
+ 	TraktMoviesWatchlistExpire             = CacheExpireLong
+ 	TraktMoviesCollectionKey               = TraktKey + "movies.collection"
+ 	TraktMoviesCollectionExpire            = CacheExpireLong
+@@ -91,7 +91,7 @@ const (
+ 	TraktShowsByCategoryExpire             = 24 * time.Hour
+ 	TraktShowsByCategoryTotalKey           = TraktKey + "shows.%s.total"
+ 	TraktShowsByCategoryTotalExpire        = 24 * time.Hour
+-	TraktShowsWatchlistKey                 = TraktKey + "shows.watchlist"
++	TraktShowsWatchlistKey                 = TraktKey + "shows.watchlist.v2"
+ 	TraktShowsWatchlistExpire              = CacheExpireLong
+ 	TraktShowsWatchedKey                   = TraktKey + "shows.watched"
+ 	TraktShowsWatchedExpire                = CacheExpireLong
+-- 
+2.54.0
+

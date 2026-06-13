@@ -1,7 +1,7 @@
 From f3715ce132da26509a02a2c5402550e6c9a37bbf Mon Sep 17 00:00:00 2001
 From: Federico Lelli <federico.lelli@mondadori.it>
 Date: Sat, 13 Jun 2026 15:25:45 +0200
-Subject: [PATCH] fix: show Trakt watchlist added date in list items
+Subject: [PATCH 1/2] fix: show Trakt watchlist added date in list items
 
 Preserve listed_at from Trakt API and set Kodi dateadded so watchlist
 pages no longer display the Unix epoch as 12/31/1969.
