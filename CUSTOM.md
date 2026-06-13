@@ -59,3 +59,14 @@ Dopo la build, crea una release sul fork con tag tipo `v0.1.113-custom1` e alleg
 
 Non usare `git submodule update` su `resources/bin` (~13 GB).
 Usa binari precompilati in `elementum-binaries/` o compila da `/Users/federico/Documents/elementum`.
+
+Patch al daemon Go vivono in `patches/elementum/`. Dopo averle applicate:
+
+```bash
+cd ~/Documents/elementum
+git am patches/elementum/*.patch   # oppure cherry-pick dal branch custom
+make darwin-x64 darwin-x64-shared
+cp -R build/darwin_x64 ~/Documents/elementum-binaries/
+cd ~/Documents/plugin.video.elementum
+./scripts/build-macos.sh
+```

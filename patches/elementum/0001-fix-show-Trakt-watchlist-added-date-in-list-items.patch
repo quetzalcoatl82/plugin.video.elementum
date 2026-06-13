@@ -1,0 +1,146 @@
+From f3715ce132da26509a02a2c5402550e6c9a37bbf Mon Sep 17 00:00:00 2001
+From: Federico Lelli <federico.lelli@mondadori.it>
+Date: Sat, 13 Jun 2026 15:25:45 +0200
+Subject: [PATCH] fix: show Trakt watchlist added date in list items
+
+Preserve listed_at from Trakt API and set Kodi dateadded so watchlist
+pages no longer display the Unix epoch as 12/31/1969.
+
+Co-authored-by: Cursor <cursoragent@cursor.com>
+---
+ Makefile        | 10 ++++++++--
+ api/trakt.go    |  8 ++++++++
+ trakt/movies.go |  6 ++++--
+ trakt/shows.go  |  7 ++++++-
+ trakt/types.go  | 10 ++++++----
+ 5 files changed, 32 insertions(+), 9 deletions(-)
+
+diff --git a/Makefile b/Makefile
+index 89d4bc7..e529032 100644
+--- a/Makefile
++++ b/Makefile
+@@ -5,6 +5,12 @@ RACE =
+ 
+ include platform_host.mk
+ 
++ifeq ($(HOST_OS), darwin)
++GOCACHE_OWNER = $(shell stat -f "%u:%g" $(shell go env GOCACHE))
++else
++GOCACHE_OWNER = $(shell stat -c "%u:%g" $(shell go env GOCACHE))
++endif
++
+ ifneq ($(CROSS_TRIPLE),)
+ 	CC := $(CROSS_TRIPLE)-$(CC)
+ 	CXX := $(CROSS_TRIPLE)-$(CXX)
+@@ -230,10 +236,10 @@ build: force
+ ifeq ($(TARGET_OS), windows)
+ 	# GOOS=windows $(GO) get -u -x github.com/yusufpapurcu/wmi
+ endif
+-	$(DOCKER) run --rm -v $(GOPATH):/go -e GOPATH=/go -e GOCACHE=/go-cache -v $(shell pwd):/go/src/$(GO_PKG) -v $(shell go env GOCACHE):/go-cache -u `stat -c "%u:%g" $(shell go env GOCACHE)` --ulimit memlock=67108864 -w /go/src/$(GO_PKG) $(DOCKER_IMAGE):$(TARGET_OS)-$(TARGET_ARCH) make dist TARGET_OS=$(TARGET_OS) TARGET_ARCH=$(TARGET_ARCH) TARGET_SHARED=$(TARGET_SHARED) GIT_VERSION=$(GIT_VERSION) IS_RACE=$(IS_RACE)
++	$(DOCKER) run --rm -v $(GOPATH):/go -e GOPATH=/go -e GOCACHE=/go-cache -v $(shell pwd):/go/src/$(GO_PKG) -v $(shell go env GOCACHE):/go-cache -u $(GOCACHE_OWNER) --ulimit memlock=67108864 -w /go/src/github.com/elgatito/elementum $(DOCKER_IMAGE):$(TARGET_OS)-$(TARGET_ARCH) make dist TARGET_OS=$(TARGET_OS) TARGET_ARCH=$(TARGET_ARCH) TARGET_SHARED=$(TARGET_SHARED) GIT_VERSION=$(GIT_VERSION) IS_RACE=$(IS_RACE)
+ 
+ docker: force
+-	$(DOCKER) run --rm -v $(GOPATH):/go -e GOPATH=/go -e GOCACHE=/go-cache -v $(shell pwd):/go/src/$(GO_PKG) -v $(shell go env GOCACHE):/go-cache -u `stat -c "%u:%g" $(shell go env GOCACHE)` --ulimit memlock=67108864 -w /go/src/$(GO_PKG) $(DOCKER_IMAGE):$(TARGET_OS)-$(TARGET_ARCH)
++	$(DOCKER) run --rm -v $(GOPATH):/go -e GOPATH=/go -e GOCACHE=/go-cache -v $(shell pwd):/go/src/$(GO_PKG) -v $(shell go env GOCACHE):/go-cache -u $(GOCACHE_OWNER) --ulimit memlock=67108864 -w /go/src/github.com/elgatito/elementum $(DOCKER_IMAGE):$(TARGET_OS)-$(TARGET_ARCH)
+ 
+ strip: force
+ 	# Temporary disable strip
+diff --git a/api/trakt.go b/api/trakt.go
+index dd3bd82..e9b97d2 100644
+--- a/api/trakt.go
++++ b/api/trakt.go
+@@ -526,6 +526,10 @@ func renderTraktMovies(ctx *gin.Context, movies []*trakt.Movies, total int, page
+ 				return
+ 			}
+ 
++			if !movieListing.ListedAt.IsZero() && item.Info != nil {
++				item.Info.DateAdded = movieListing.ListedAt.UTC().Format("2006-01-02 15:04:05")
++			}
++
+ 			// Example of adding UTF8 char into title,
+ 			// list: https://www.utf8-chartable.de/unicode-utf8-table.pl?start=9728&number=1024&names=2&utf8=string-literal
+ 			// item.Label += " \xe2\x98\x85"
+@@ -879,6 +883,10 @@ func renderTraktShows(ctx *gin.Context, shows []*trakt.Shows, total int, page in
+ 				return
+ 			}
+ 
++			if !showListing.ListedAt.IsZero() && item.Info != nil {
++				item.Info.DateAdded = showListing.ListedAt.UTC().Format("2006-01-02 15:04:05")
++			}
++
+ 			tmdbID := strconv.Itoa(showListing.Show.IDs.TMDB)
+ 
+ 			item.Path = URLForXBMC("/show/%d/seasons", showListing.Show.IDs.TMDB)
+diff --git a/trakt/movies.go b/trakt/movies.go
+index abad155..017f860 100644
+--- a/trakt/movies.go
++++ b/trakt/movies.go
+@@ -225,7 +225,8 @@ func WatchlistMovies(isUpdateNeeded bool) (movies []*Movies, err error) {
+ 	movieListing := make([]*Movies, 0)
+ 	for _, movie := range watchlist {
+ 		movieItem := Movies{
+-			Movie: movie.Movie,
++			Movie:    movie.Movie,
++			ListedAt: movie.ListedAt,
+ 		}
+ 		movieListing = append(movieListing, &movieItem)
+ 	}
+@@ -462,7 +463,8 @@ func ListItemsMovies(user, listID string) (movies []*Movies, err error) {
+ 			continue
+ 		}
+ 		movieItem := Movies{
+-			Movie: movie.Movie,
++			Movie:    movie.Movie,
++			ListedAt: movie.ListedAt,
+ 		}
+ 		movieListing = append(movieListing, &movieItem)
+ 	}
+diff --git a/trakt/shows.go b/trakt/shows.go
+index 6a93989..a6ba340 100644
+--- a/trakt/shows.go
++++ b/trakt/shows.go
+@@ -354,10 +354,15 @@ func WatchlistShows(isUpdateNeeded bool) (shows []*Shows, err error) {
+ 		return shows, err
+ 	}
+ 
++	sort.Slice(watchlist, func(i, j int) bool {
++		return watchlist[i].ListedAt.After(watchlist[j].ListedAt)
++	})
++
+ 	showListing := make([]*Shows, 0)
+ 	for _, show := range watchlist {
+ 		showItem := Shows{
+-			Show: show.Show,
++			Show:     show.Show,
++			ListedAt: show.ListedAt,
+ 		}
+ 		showListing = append(showListing, &showItem)
+ 	}
+diff --git a/trakt/types.go b/trakt/types.go
+index 155c76e..4c99224 100644
+--- a/trakt/types.go
++++ b/trakt/types.go
+@@ -117,14 +117,16 @@ type Airs struct {
+ 
+ // Movies ...
+ type Movies struct {
+-	Watchers int    `json:"watchers"`
+-	Movie    *Movie `json:"movie"`
++	Watchers int       `json:"watchers"`
++	Movie    *Movie    `json:"movie"`
++	ListedAt time.Time `json:"listed_at,omitempty"`
+ }
+ 
+ // Shows ...
+ type Shows struct {
+-	Watchers int   `json:"watchers"`
+-	Show     *Show `json:"show"`
++	Watchers int       `json:"watchers"`
++	Show     *Show     `json:"show"`
++	ListedAt time.Time `json:"listed_at,omitempty"`
+ }
+ 
+ // Watchlist ...
+-- 
+2.54.0
+
